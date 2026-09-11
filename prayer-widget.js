@@ -1,5 +1,5 @@
-// IOK Prayer Times — azan + iqamah for IOK & CHESS
-// Home screen (medium): prayer rows, shared azan, iqamah per masjid.
+// IOK Prayer Times — azan (IOK) + iqamah for IOK & CHESS
+// Home screen (medium): prayer rows, azan from IOK, iqamah per masjid.
 // Lock screen: IOK only. Rectangular = 2 cols x 3 rows; circular/inline = next prayer.
 
 const LOCS = [
@@ -173,7 +173,7 @@ if (!data.length) {
   w.addSpacer(3);
   for (const p of base.list) {
     const q = omap[p.name] || {};
-    const azan = (q.azan && q.azan !== p.azan) ? `${p.azan}/${q.azan}` : p.azan;
+    const azan = p.azan; // IOK azan only — ignore CHESS azan even when it differs
     rowCells([p.name, azan, p.iqamah || "–", q.iqamah || (other ? "–" : "")], false, p.name === next);
   }
 
