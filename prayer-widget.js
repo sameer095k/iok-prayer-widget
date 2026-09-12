@@ -1,25 +1,27 @@
 // IOK Prayer Times — azan (IOK) + iqamah for IOK & CHESS
-// Home screen (medium): prayer rows, azan from IOK, iqamah per masjid.
-// Lock screen: IOK only. Rectangular = 2 cols x 3 rows; circular/inline = next prayer.
+// Background: janamaz.jpg saved in iCloud Drive > Scriptable.
+// Home screen (medium): prayer table, IOK azan only, iqamah per masjid.
+// Lock screen: upcoming prayer only (name + time). Widget refreshes after each prayer.
 
 const LOCS = [
   { id: "iok",   name: "IOK" },
   { id: "chess", name: "CHESS" },
 ];
+const BG_FILE = "janamaz.jpg";
 
 // ---------- data ----------
-const fm = FileManager.local();
-const cacheDir = fm.joinPath(fm.documentsDirectory(), "iok-prayer");
+const fmLocal = FileManager.local();
+const cacheDir = fmLocal.joinPath(fmLocal.documentsDirectory(), "iok-prayer");
 function saveCache(id, obj) {
   try {
-    if (!fm.fileExists(cacheDir)) fm.createDirectory(cacheDir, true);
-    fm.writeString(fm.joinPath(cacheDir, id + ".json"), JSON.stringify(obj));
+    if (!fmLocal.fileExists(cacheDir)) fmLocal.createDirectory(cacheDir, true);
+    fmLocal.writeString(fmLocal.joinPath(cacheDir, id + ".json"), JSON.stringify(obj));
   } catch (e) {}
 }
 function loadCache(id) {
   try {
-    const p = fm.joinPath(cacheDir, id + ".json");
-    if (fm.fileExists(p)) return JSON.parse(fm.readString(p));
+    const p = fmLocal.joinPath(cacheDir, id + ".json");
+    if (fmLocal.fileExists(p)) return JSON.parse(fmLocal.readString(p));
   } catch (e) {}
   return null;
 }
@@ -63,9 +65,24 @@ function prayerDate(t, period) {
   d.setHours(hh, m || 0, 0, 0);
   return d;
 }
-function nextPrayerName(list) {
-  for (const p of list) if (prayerDate(p.azan, p.period) > now) return p.name;
-  return list[0].name;
+// Next upcoming prayer; wraps to tomorrow's Fajr after Isha.
+function nextPrayer(list) {
+  for (const p of list) {
+    const d = prayerDate(p.azan, p.period);
+    if (d > now) return { prayer: p, date: d };
+  }
+  const p0 = list[0];
+  const d = prayerDate(p0.azan, p0.period);
+  d.setDate(d.getDate() + 1);
+  return { prayer: p0, date: d };
+}
+// "6:42" + "PM" -> "6:42p"
+function fmtShort(t, period) {
+  return `${t}${period === "PM" ? "p" : "a"}`;
+}
+function prayerTimeLine(p) {
+  return p.iqamah ? `${fmtShort(p.azan, p.period)} → ${fmtShort(p.iqamah, p.period)}`
+                  : fmtShort(p.azan, p.period);
 }
 
 // "UPCOMING TIME CHANGES: BEGINNING SUNDAY, SEPTEMBER 13: FAJR AZAN 6:00 ..."
@@ -95,6 +112,29 @@ function announcementLine(text, locName, azanNow, iqamahNow) {
   return { text: `⏳ ${locName}${dateBit}: ${deltas.join(" · ")}`, lines: 1 };
 }
 
+// ---------- background ----------
+async function loadBackground() {
+  try {
+    const fm = FileManager.iCloud();
+    const p = fm.joinPath(fm.documentsDirectory(), BG_FILE);
+    if (!fm.fileExists(p)) await fm.downloadFileFromiCloud(p);
+    if (fm.fileExists(p)) return fm.readImage(p);
+  } catch (e) {}
+  return null;
+}
+
+// ---------- text styling (readable over the bright rug) ----------
+const WHITE = Color.white();
+const DIM = new Color("#ffffff", 0.75);
+function styled(t, font, color) {
+  t.font = font;
+  t.textColor = color || WHITE;
+  t.shadowColor = new Color("#000000", 0.6);
+  t.shadowRadius = 4;
+  t.shadowOffset = new Point(0, 2);
+  return t;
+}
+
 // ---------- load ----------
 const data = [];
 for (const L of LOCS) {
@@ -103,51 +143,49 @@ for (const L of LOCS) {
 }
 
 const w = new ListWidget();
+const bg = await loadBackground();
+if (bg) w.backgroundImage = bg;
+else w.backgroundColor = new Color("#1e3a5f"); // fallback if janamaz.jpg isn't on the phone yet
 
 if (!data.length) {
-  const t = w.addText("Couldn't load prayer times.");
-  t.font = Font.systemFont(12);
+  styled(w.addText("Couldn't load prayer times."), Font.systemFont(12));
 } else if (config.runsInAccessoryWidget) {
-  // ----- lock screen: IOK only -----
+  // ----- lock screen: upcoming prayer only -----
   const d0 = data.find(d => d.loc.id === "iok") || data[0];
-  const next = nextPrayerName(d0.list);
+  const np = nextPrayer(d0.list);
+  const p = np.prayer;
   const fam = config.widgetFamily || "";
   if (fam === "accessoryCircular") {
-    const p = d0.list.find(x => x.name === next);
-    const n = w.addText(p.name); n.font = Font.systemFont(10);
-    const t = w.addText(p.iqamah || p.azan); t.font = Font.boldSystemFont(14);
+    const n = styled(w.addText(p.name), Font.semiboldSystemFont(10)); n.centerAlignText();
+    const t = styled(w.addText(fmtShort(p.azan, p.period)), Font.boldSystemFont(15)); t.centerAlignText();
   } else if (fam === "accessoryInline") {
-    const p = d0.list.find(x => x.name === next);
-    const t = w.addText(`Next: ${p.name} ${p.azan}${p.iqamah ? "→" + p.iqamah : ""}`);
-    t.font = Font.systemFont(13);
+    styled(w.addText(`Next: ${p.name} ${prayerTimeLine(p)}`), Font.systemFont(13));
   } else {
-    // rectangular (~half the lock screen row): 2 columns x 3 rows
-    const cols = w.addStack(); cols.layoutHorizontally();
-    [d0.list.slice(0, 3), d0.list.slice(3, 6)].forEach((colPrayers, ci) => {
-      if (ci > 0) cols.addSpacer();
-      const col = cols.addStack(); col.layoutVertically();
-      colPrayers.forEach(p => {
-        const nm = col.addText(p.name);
-        nm.font = Font.systemFont(9);
-        const tm = col.addText(p.iqamah ? `${p.azan}→${p.iqamah}` : p.azan);
-        tm.font = p.name === next ? Font.boldSystemFont(11) : Font.systemFont(11);
-      });
-    });
+    // rectangular: big upcoming prayer + time
+    w.addSpacer();
+    const v = w.addStack(); v.layoutVertically();
+    const lab = styled(v.addText("NEXT PRAYER"), Font.systemFont(9), DIM); lab.centerAlignText();
+    v.addSpacer(3);
+    const nm = styled(v.addText(p.name.toUpperCase()), Font.semiboldSystemFont(20)); nm.centerAlignText();
+    v.addSpacer(2);
+    const tm = styled(v.addText(prayerTimeLine(p)), Font.boldSystemFont(17)); tm.centerAlignText();
+    w.addSpacer();
   }
+  // refresh shortly after this prayer so "upcoming" flips at the right time
+  w.refreshAfterDate = new Date(np.date.getTime() + 2 * 60000);
 } else {
   // ----- home screen: prayer rows, shared azan, iqamah per masjid -----
-  w.backgroundColor = new Color("#14141a");
   const stale = data.some(d => d.stale);
-  const head = w.addText(`🕌 Prayer Times · ${dayShort}${stale ? " · offline" : ""}`);
-  head.font = Font.semiboldSystemFont(12);
-  head.textColor = Color.white();
+  const head = styled(w.addText(`🕌 Prayer Times · ${dayShort}${stale ? " · offline" : ""}`),
+    Font.semiboldSystemFont(13));
   w.addSpacer(6);
 
   const base = data.find(d => d.loc.id === "iok") || data[0];
   const other = data.find(d => d !== base);
   const omap = {};
   if (other) for (const p of other.list) omap[p.name] = p;
-  const next = nextPrayerName(base.list);
+  const np = nextPrayer(base.list);
+  const next = np.prayer.name;
 
   const nameW = 78, timeW = 74;
   function rowCells(cells, isHeader, isNext) {
@@ -159,11 +197,10 @@ if (!data.length) {
       cell.size = new Size(i === 0 ? nameW : timeW, 0);
       const t = cell.addText(c);
       if (isHeader) {
-        t.font = Font.systemFont(10);
-        t.textColor = new Color("#9aa0b4");
+        styled(t, Font.systemFont(10.5), DIM);
       } else {
-        t.font = isNext ? Font.boldSystemFont(12) : Font.systemFont(12);
-        t.textColor = isNext ? new Color("#7ee2a8") : (i === 0 ? new Color("#c9cddb") : Color.white());
+        styled(t, isNext ? Font.boldSystemFont(13) : Font.systemFont(12.5),
+          isNext ? WHITE : (i === 0 ? new Color("#ffffff", 0.92) : WHITE));
       }
       if (i > 0) t.rightAlignText();
     });
@@ -188,15 +225,13 @@ if (!data.length) {
     const a = announcementLine(txt, d.loc.name, azanNow, iqNow);
     if (!a) continue;
     w.addSpacer(5);
-    const f = w.addText(a.text);
-    f.font = Font.systemFont(10.5);
-    f.textColor = new Color("#e8c46a");
+    const f = styled(w.addText(a.text), Font.systemFont(11), new Color("#ffd97a"));
     f.lineLimit = a.lines;
     f.minimumScaleFactor = 0.85;
   }
 
-  const rn = new Date(); rn.setDate(rn.getDate() + 1); rn.setHours(2, 30, 0, 0);
-  w.refreshAfterDate = rn; // refresh overnight, daily
+  // refresh shortly after the next prayer so highlighting + times stay current
+  w.refreshAfterDate = new Date(np.date.getTime() + 2 * 60000);
 }
 
 if (config.runsInWidget || config.runsInAccessoryWidget) Script.setWidget(w);
