@@ -113,7 +113,27 @@ function announcementLine(text, locName, azanNow, iqamahNow) {
 }
 
 // ---------- background ----------
+// The rug lives in the git repo; the widget downloads it once and caches it
+// on the phone. (Direct download only works if the repo is public; otherwise
+// save janamaz.jpg into iCloud Drive > Scriptable and the widget uses that.)
+const BG_URL = "https://raw.githubusercontent.com/sameer095k/iok-prayer-widget/main/janamaz.jpg";
 async function loadBackground() {
+  const local = FileManager.local();
+  const cached = local.joinPath(local.joinPath(local.documentsDirectory(), "iok-prayer"), "janamaz.jpg");
+  try {
+    if (local.fileExists(cached)) return local.readImage(cached);
+    const req = new Request(BG_URL);
+    req.timeoutInterval = 20;
+    const img = await req.loadImage();
+    if (img) {
+      try {
+        const dir = local.joinPath(local.documentsDirectory(), "iok-prayer");
+        if (!local.fileExists(dir)) local.createDirectory(dir, true);
+        local.writeImage(cached, img);
+      } catch (e) {}
+      return img;
+    }
+  } catch (e) {}
   try {
     const fm = FileManager.iCloud();
     const p = fm.joinPath(fm.documentsDirectory(), BG_FILE);
