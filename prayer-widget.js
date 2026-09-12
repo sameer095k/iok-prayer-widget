@@ -8,7 +8,8 @@ const LOCS = [
   { id: "iok",   name: "IOK" },
   { id: "chess", name: "CHESS" },
 ];
-const BG_FILE = "Janamaz.png";
+// Names the widget looks for, in order, inside iCloud Drive > Scriptable.
+const BG_FILES = ["Janamaz.png", "Janamaz.jpg", "janamaz.png", "janamaz.jpg"];
 
 // ---------- data ----------
 const fmLocal = FileManager.local();
@@ -137,7 +138,7 @@ async function loadBackground() {
   } catch (e) {}
   try {
     const fm = FileManager.iCloud();
-    for (const name of ["Janamaz.png", "janamaz.png", "janamaz.jpg"]) {
+    for (const name of BG_FILES) {
       const p = fm.joinPath(fm.documentsDirectory(), name);
       if (!fm.fileExists(p)) { try { await fm.downloadFileFromiCloud(p); } catch (e) {} }
       if (fm.fileExists(p)) return fm.readImage(p);
