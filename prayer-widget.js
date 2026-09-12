@@ -1,5 +1,6 @@
 // IOK Prayer Times — azan (IOK) + iqamah for IOK & CHESS
-// Background: janamaz.jpg saved in iCloud Drive > Scriptable.
+// Background: Janamaz.png saved in iCloud Drive > Scriptable (also cached from
+// the git repo when reachable).
 // Home screen (medium): prayer table, IOK azan only, iqamah per masjid.
 // Lock screen: upcoming prayer only (name + time). Widget refreshes after each prayer.
 
@@ -7,7 +8,7 @@ const LOCS = [
   { id: "iok",   name: "IOK" },
   { id: "chess", name: "CHESS" },
 ];
-const BG_FILE = "janamaz.jpg";
+const BG_FILE = "Janamaz.png";
 
 // ---------- data ----------
 const fmLocal = FileManager.local();
@@ -136,9 +137,11 @@ async function loadBackground() {
   } catch (e) {}
   try {
     const fm = FileManager.iCloud();
-    const p = fm.joinPath(fm.documentsDirectory(), BG_FILE);
-    if (!fm.fileExists(p)) await fm.downloadFileFromiCloud(p);
-    if (fm.fileExists(p)) return fm.readImage(p);
+    for (const name of ["Janamaz.png", "janamaz.png", "janamaz.jpg"]) {
+      const p = fm.joinPath(fm.documentsDirectory(), name);
+      if (!fm.fileExists(p)) { try { await fm.downloadFileFromiCloud(p); } catch (e) {} }
+      if (fm.fileExists(p)) return fm.readImage(p);
+    }
   } catch (e) {}
   return null;
 }
