@@ -17,17 +17,26 @@ const cacheDir = fmLocal.joinPath(fmLocal.documentsDirectory(), "iok-prayer");
 function saveCache(id, obj) {
   try {
     if (!fmLocal.fileExists(cacheDir)) fmLocal.createDirectory(cacheDir, true);
-    fmLocal.writeString(fmLocal.joinPath(cacheDir, id + ".json"), JSON.stringify(obj));
+    fmLocal.writeString(fmLocal.joinPath(cacheDir, id + ".json"),
+      JSON.stringify({ date: cacheStamp, json: obj }));
   } catch (e) {}
 }
-function loadCache(id) {
+// sameDayOnly: only accept the cache if it was stored today. Intraday
+// refreshes never hit the network — the schedule doesn't change mid-day,
+// so the lock screen keeps working when the phone drops offline.
+function loadCache(id, sameDayOnly) {
   try {
     const p = fmLocal.joinPath(cacheDir, id + ".json");
-    if (fmLocal.fileExists(p)) return JSON.parse(fmLocal.readString(p));
+    if (fmLocal.fileExists(p)) {
+      const c = JSON.parse(fmLocal.readString(p));
+      if (c && c.json && c.json.fe && (!sameDayOnly || c.date === cacheStamp)) return c;
+    }
   } catch (e) {}
   return null;
 }
 async function fetchTimes(id) {
+  const cached = loadCache(id, true);
+  if (cached) return { json: cached.json, stale: false };
   for (const u of [
     `http://isalaah.com/loc/ca/schedule.php?p=clk&loc=${id}`,
     `https://isalaah.com/loc/ca/schedule.php?p=clk&loc=${id}`,
@@ -40,7 +49,10 @@ async function fetchTimes(id) {
       if (j && j.fe) { saveCache(id, j); return { json: j, stale: false }; }
     } catch (e) {}
   }
-  return { json: loadCache(id), stale: true };
+  // Offline with no cache from today: show the last day we have, marked stale,
+  // rather than a blank widget.
+  const old = loadCache(id, false);
+  return { json: old ? old.json : null, stale: true };
 }
 
 function prayerList(j) {
@@ -57,6 +69,8 @@ function prayerList(j) {
 // NOTE: the site's own date label runs a day ahead in the evening,
 // so the widget uses the phone's real date instead.
 const now = new Date();
+// Stable same-day key for the local cache ("2026-09-16"), locale-independent.
+const cacheStamp = now.toLocaleDateString("en-CA");
 const todayLabel = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 const dayShort = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
