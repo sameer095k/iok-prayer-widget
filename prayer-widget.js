@@ -135,7 +135,9 @@ function announcementLine(text, locName, azanNow, iqamahNow) {
 const BG_URL = "https://raw.githubusercontent.com/sameer095k/iok-prayer-widget/main/janamaz.jpg";
 async function loadBackground() {
   const local = FileManager.local();
-  const cached = local.joinPath(local.joinPath(local.documentsDirectory(), "iok-prayer"), "janamaz.jpg");
+  // v2 cache name: bump this whenever janamaz.jpg changes in the repo so the
+  // phone re-downloads instead of serving the stale cached rug.
+  const cached = local.joinPath(local.joinPath(local.documentsDirectory(), "iok-prayer"), "janamaz-v2.jpg");
   try {
     if (local.fileExists(cached)) return local.readImage(cached);
     const req = new Request(BG_URL);
