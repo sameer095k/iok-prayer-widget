@@ -103,29 +103,91 @@ function prayerTimeLine(p) {
 
 // "UPCOMING TIME CHANGES: BEGINNING SUNDAY, SEPTEMBER 13: FAJR AZAN 6:00 ..."
 // -> "⏳ CHESS from Sun Sep 13: Fajr 5:22→6:00 · Isha 8:16→8:30"
+// Newer prose format: "Fajr will be 6:10 AM on Sunday, Sep 27 | Isha will be ..."
+// -> "⏳ CHESS from Sun Sep 27: Fajr 6:00→6:10a · Isha 8:30→8:20p"
+// Always condenses to a single line so the announcement can't push the
+// widget past its height and get clipped at the bottom edge.
 const cap3 = s => s.charAt(0).toUpperCase() + s.slice(1, 3).toLowerCase();
-function announcementLine(text, locName, azanNow, iqamahNow) {
-  let dateBit = "";
-  const dm = text.match(/BEGINNING\s+([A-Za-z]+),?\s+([A-Za-z]+)\s+(\d{1,2})/);
-  if (dm) {
-    const eff = new Date(`${dm[2]} ${dm[3]}, ${now.getFullYear()}`);
-    if (!isNaN(eff.getTime()) && eff <= new Date(todayLabel)) return null; // already in effect
-    dateBit = ` from ${cap3(dm[1])} ${cap3(dm[2])} ${dm[3]}`;
-  }
-  const deltas = [];
+const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+const MON3 = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+               jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+const WD3 = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// "Sep" + "27" -> Date. Rolls to next year when the date is long past
+// (announcement posted in December for a January change).
+function effDate(monthStr, dayStr) {
+  const m = MON3[monthStr.slice(0, 3).toLowerCase()];
+  if (m === undefined) return null;
+  const d = new Date(now.getFullYear(), m, Number(dayStr));
+  if (d < new Date(todayLabel) && (new Date(todayLabel) - d) > 60 * 864e5)
+    d.setFullYear(d.getFullYear() + 1);
+  return d;
+}
+function toMin(t, period) {
+  const [h, m] = t.split(":").map(Number);
+  let hh = h % 12; if (period === "PM") hh += 12;
+  return hh * 60 + (m || 0);
+}
+function dateKey(d) {
+  const mon = ["jan", "feb", "mar", "apr", "may", "jun",
+               "jul", "aug", "sep", "oct", "nov", "dec"][d.getMonth()];
+  return `${WD3[d.getDay()]} ${cap3(mon)} ${d.getDate()}`;
+}
+function announcementLine(text, locName, azanNow, iqamahNow, periods) {
+  const items = []; // {pname, old, neu, date}
+  let baseDate = null;
+  const dm = text.match(/BEGINNING\s+([A-Za-z]+),?\s+([A-Za-z]+)\s+(\d{1,2})/i);
+  if (dm) baseDate = effDate(dm[2], dm[3]);
+
+  // old "FAJR AZAN 6:00" format
   const re = /([A-Za-z]+)\s+(AZAN|IQAMAH)\s+(\d{1,2}:\d{2})/gi;
   let mm;
   while ((mm = re.exec(text)) !== null) {
-    const pname = mm[1].charAt(0).toUpperCase() + mm[1].slice(1).toLowerCase();
+    const pname = cap1(mm[1]);
+    if (!azanNow[pname] && !iqamahNow[pname]) continue;
     const cur = mm[2].toUpperCase() === "AZAN" ? azanNow[pname] : iqamahNow[pname];
-    deltas.push(cur ? `${pname} ${cur}→${mm[3]}` : `${pname} →${mm[3]}`);
+    items.push({ pname, old: cur || null, neu: mm[3], date: baseDate });
   }
-  if (!deltas.length) {
-    const cleaned = text.replace(/^UPCOMING TIME CHANGES:\s*/i, "").trim();
+
+  // prose "Fajr will be 6:10 AM on Sunday, Sep 27" format. The site doesn't
+  // say azan vs iqamah, so the old time is whichever current time sits
+  // closest to the new one (usually the iqamah shifting a few minutes).
+  const re2 = /([A-Za-z]+)\s+will be\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+on\s+[A-Za-z]+,?\s+([A-Za-z]+)\s+(\d{1,2})/gi;
+  let m2;
+  while ((m2 = re2.exec(text)) !== null) {
+    const pname = cap1(m2[1]);
+    const per = periods[pname];
+    const cands = [];
+    if (azanNow[pname]) cands.push(azanNow[pname]);
+    if (iqamahNow[pname]) cands.push(iqamahNow[pname]);
+    if (!per || !cands.length) continue;
+    const neuMin = toMin(m2[2], m2[3].toUpperCase());
+    let old = null, bestD = 1e9;
+    for (const c of cands) {
+      const d = Math.abs(toMin(c, per) - neuMin);
+      if (d < bestD) { bestD = d; old = c; }
+    }
+    if (old && toMin(old, per) === neuMin) old = null;
+    items.push({ pname, old, neu: fmtShort(m2[2], m2[3].toUpperCase()),
+                 date: effDate(m2[4], m2[5]) });
+  }
+
+  if (!items.length) {
+    // Unparseable: compact the raw text onto one line rather than clipping it.
+    const cleaned = text.replace(/^UPCOMING TIME CHANGES:\s*/i, "").replace(/\s+/g, " ").trim();
     if (!cleaned) return null;
-    return { text: `⏳ ${locName}: ${cleaned}`, lines: 2 };
+    const short = cleaned.length > 78 ? cleaned.slice(0, 75).trimEnd() + "…" : cleaned;
+    return { text: `⏳ ${locName}: ${short}`, lines: 1 };
   }
-  return { text: `⏳ ${locName}${dateBit}: ${deltas.join(" · ")}`, lines: 1 };
+  const todayMid = new Date(todayLabel);
+  const live = items.filter(it => !it.date || it.date > todayMid);
+  if (!live.length) return null; // already in effect
+  const groups = {};
+  for (const it of live) {
+    const k = it.date ? dateKey(it.date) : "soon";
+    (groups[k] = groups[k] || []).push(`${it.pname} ${it.old ? it.old + "→" : "→"}${it.neu}`);
+  }
+  const segs = Object.keys(groups).map(k => `from ${k}: ${groups[k].join(" · ")}`);
+  return { text: `⏳ ${locName} ${segs.join(" · ")}`, lines: 1 };
 }
 
 // ---------- background ----------
@@ -261,13 +323,14 @@ if (!data.length) {
     const txt = d.json.timeChanges;
     if (!txt) continue;
     const iqNow = {};
-    for (const p of d.list) iqNow[p.name] = p.iqamah;
-    const a = announcementLine(txt, d.loc.name, azanNow, iqNow);
+    const perMap = {};
+    for (const p of d.list) { iqNow[p.name] = p.iqamah; perMap[p.name] = p.period; }
+    const a = announcementLine(txt, d.loc.name, azanNow, iqNow, perMap);
     if (!a) continue;
-    w.addSpacer(5);
-    const f = styled(w.addText(a.text), Font.systemFont(11), new Color("#ffd97a"));
-    f.lineLimit = a.lines;
-    f.minimumScaleFactor = 0.85;
+    w.addSpacer(4);
+    const f = styled(w.addText(a.text), Font.systemFont(10.5), new Color("#ffd97a"));
+    f.lineLimit = 1;
+    f.minimumScaleFactor = 0.7;
   }
 
   // refresh shortly after the next prayer so highlighting + times stay current
