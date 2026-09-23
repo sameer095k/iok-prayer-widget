@@ -328,7 +328,7 @@ if (!data.length) {
     const a = announcementLine(txt, d.loc.name, azanNow, iqNow, perMap);
     if (!a) continue;
     w.addSpacer(4);
-    const f = styled(w.addText(a.text), Font.systemFont(10.5), new Color("#ffd97a"));
+    const f = styled(w.addText(a.text), Font.systemFont(11.5), new Color("#ffd97a"));
     f.lineLimit = 1;
     f.minimumScaleFactor = 0.7;
   }
