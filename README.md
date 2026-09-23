@@ -3,6 +3,8 @@
 A [Scriptable](https://scriptable.app) (iOS) widget showing azan + iqamah times for
 IOK and CHESS masjids, sourced from isalaah.com.
 
+![Home screen widget](screenshot.jpg)
+
 - `prayer-widget.js` — the whole widget. Paste it into a Scriptable script.
 - `loader.js` — recommended: a tiny auto-updating loader. Paste it into
   Scriptable once and it pulls the latest `prayer-widget.js` from this repo
