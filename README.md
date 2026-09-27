@@ -2,7 +2,7 @@
 
 Shows IOK and CHESS masjid azan + iqamah times right on your iPhone home screen and lock screen.
 
-![Home screen widget](screenshot.jpg)
+![Home screen widget](screenshot.jpg?v=2)
 
 ## Setup
 
