@@ -102,9 +102,10 @@ function prayerTimeLine(p) {
 }
 
 // "UPCOMING TIME CHANGES: BEGINNING SUNDAY, SEPTEMBER 13: FAJR AZAN 6:00 ..."
-// -> "⏳ CHESS from Sun Sep 13: Fajr 5:22→6:00 · Isha 8:16→8:30"
+// -> "⏳ CHESS from Sun Sep 13: Fajr 6:00 · Isha 8:30"
 // Newer prose format: "Fajr will be 6:10 AM on Sunday, Sep 27 | Isha will be ..."
-// -> "⏳ CHESS from Sun Sep 27: Fajr 6:00→6:10a · Isha 8:30→8:20p"
+// -> "⏳ CHESS from Sun Sep 27: Fajr 6:10a · Isha 8:20p"
+// Shows only the upcoming time — no old time, no arrow.
 // Always condenses to a single line so the announcement can't push the
 // widget past its height and get clipped at the bottom edge.
 const cap3 = s => s.charAt(0).toUpperCase() + s.slice(1, 3).toLowerCase();
@@ -122,18 +123,13 @@ function effDate(monthStr, dayStr) {
     d.setFullYear(d.getFullYear() + 1);
   return d;
 }
-function toMin(t, period) {
-  const [h, m] = t.split(":").map(Number);
-  let hh = h % 12; if (period === "PM") hh += 12;
-  return hh * 60 + (m || 0);
-}
 function dateKey(d) {
   const mon = ["jan", "feb", "mar", "apr", "may", "jun",
                "jul", "aug", "sep", "oct", "nov", "dec"][d.getMonth()];
   return `${WD3[d.getDay()]} ${cap3(mon)} ${d.getDate()}`;
 }
 function announcementLine(text, locName, azanNow, iqamahNow, periods) {
-  const items = []; // {pname, old, neu, date}
+  const items = []; // {pname, neu, date}
   let baseDate = null;
   const dm = text.match(/BEGINNING\s+([A-Za-z]+),?\s+([A-Za-z]+)\s+(\d{1,2})/i);
   if (dm) baseDate = effDate(dm[2], dm[3]);
@@ -144,30 +140,17 @@ function announcementLine(text, locName, azanNow, iqamahNow, periods) {
   while ((mm = re.exec(text)) !== null) {
     const pname = cap1(mm[1]);
     if (!azanNow[pname] && !iqamahNow[pname]) continue;
-    const cur = mm[2].toUpperCase() === "AZAN" ? azanNow[pname] : iqamahNow[pname];
-    items.push({ pname, old: cur || null, neu: mm[3], date: baseDate });
+    items.push({ pname, neu: mm[3], date: baseDate });
   }
 
   // prose "Fajr will be 6:10 AM on Sunday, Sep 27" format. The site doesn't
-  // say azan vs iqamah, so the old time is whichever current time sits
-  // closest to the new one (usually the iqamah shifting a few minutes).
+  // say azan vs iqamah, and the announcement only shows the new time anyway.
   const re2 = /([A-Za-z]+)\s+will be\s+(\d{1,2}:\d{2})\s*(AM|PM)\s+on\s+[A-Za-z]+,?\s+([A-Za-z]+)\s+(\d{1,2})/gi;
   let m2;
   while ((m2 = re2.exec(text)) !== null) {
     const pname = cap1(m2[1]);
-    const per = periods[pname];
-    const cands = [];
-    if (azanNow[pname]) cands.push(azanNow[pname]);
-    if (iqamahNow[pname]) cands.push(iqamahNow[pname]);
-    if (!per || !cands.length) continue;
-    const neuMin = toMin(m2[2], m2[3].toUpperCase());
-    let old = null, bestD = 1e9;
-    for (const c of cands) {
-      const d = Math.abs(toMin(c, per) - neuMin);
-      if (d < bestD) { bestD = d; old = c; }
-    }
-    if (old && toMin(old, per) === neuMin) old = null;
-    items.push({ pname, old, neu: fmtShort(m2[2], m2[3].toUpperCase()),
+    if (!periods[pname]) continue;
+    items.push({ pname, neu: fmtShort(m2[2], m2[3].toUpperCase()),
                  date: effDate(m2[4], m2[5]) });
   }
 
@@ -184,7 +167,7 @@ function announcementLine(text, locName, azanNow, iqamahNow, periods) {
   const groups = {};
   for (const it of live) {
     const k = it.date ? dateKey(it.date) : "soon";
-    (groups[k] = groups[k] || []).push(`${it.pname} ${it.old ? it.old + "→" : "→"}${it.neu}`);
+    (groups[k] = groups[k] || []).push(`${it.pname} ${it.neu}`);
   }
   const segs = Object.keys(groups).map(k => `from ${k}: ${groups[k].join(" · ")}`);
   return { text: `⏳ ${locName} ${segs.join(" · ")}`, lines: 1 };
