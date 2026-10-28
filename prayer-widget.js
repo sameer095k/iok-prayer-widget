@@ -92,6 +92,21 @@ function nextPrayer(list) {
   d.setDate(d.getDate() + 1);
   return { prayer: p0, date: d };
 }
+// Current prayer: its azan has passed and its IOK iqamah + 10 min has
+// not (a prayer with no iqamah, e.g. Shurooq, gets azan + 10). While
+// one is current it holds the highlight instead of the next prayer —
+// Sameer's rule, 2026-10-27.
+function currentPrayer(list) {
+  let cur = null;
+  for (const p of list) {
+    const a = prayerDate(p.azan, p.period);
+    if (a > now) continue;
+    const base = p.iqamah ? prayerDate(p.iqamah, p.period) : a;
+    const end = new Date(base.getTime() + 10 * 60000);
+    if (now < end) cur = { prayer: p, end };
+  }
+  return cur;
+}
 // "6:42" + "PM" -> "6:42p"
 function fmtShort(t, period) {
   return `${t}${period === "PM" ? "p" : "a"}`;
@@ -271,6 +286,8 @@ if (!data.length) {
   if (other) for (const p of other.list) omap[p.name] = p;
   const np = nextPrayer(base.list);
   const next = np.prayer.name;
+  const cp = currentPrayer(base.list);
+  const hl = cp ? cp.prayer.name : next;
 
   const nameW = 78, timeW = 74;
   function rowCells(cells, isHeader, isNext) {
@@ -296,7 +313,7 @@ if (!data.length) {
   for (const p of base.list) {
     const q = omap[p.name] || {};
     const azan = p.azan; // IOK azan only — ignore CHESS azan even when it differs
-    rowCells([p.name, azan, p.iqamah || "–", q.iqamah || (other ? "–" : "")], false, p.name === next);
+    rowCells([p.name, azan, p.iqamah || "–", q.iqamah || (other ? "–" : "")], false, p.name === hl);
   }
 
   // upcoming time-change announcements, one delta line per masjid
@@ -316,8 +333,14 @@ if (!data.length) {
     f.minimumScaleFactor = 0.7;
   }
 
-  // refresh shortly after the next prayer so highlighting + times stay current
-  w.refreshAfterDate = new Date(np.date.getTime() + 2 * 60000);
+  // refresh shortly after the next prayer so highlighting + times stay
+  // current — or just after the current prayer's window ends, if sooner
+  let refresh = new Date(np.date.getTime() + 2 * 60000);
+  if (cp) {
+    const r = new Date(cp.end.getTime() + 60000);
+    if (r < refresh) refresh = r;
+  }
+  w.refreshAfterDate = refresh;
 }
 
 if (config.runsInWidget || config.runsInAccessoryWidget) Script.setWidget(w);
