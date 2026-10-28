@@ -250,29 +250,36 @@ else w.backgroundColor = new Color("#1e3a5f"); // fallback if janamaz.jpg isn't 
 if (!data.length) {
   styled(w.addText("Couldn't load prayer times."), Font.systemFont(12));
 } else if (config.runsInAccessoryWidget) {
-  // ----- lock screen: upcoming prayer only -----
+  // ----- lock screen: featured prayer only (current prayer during its iqamah + 10 window, else the next one) -----
   const d0 = data.find(d => d.loc.id === "iok") || data[0];
   const np = nextPrayer(d0.list);
-  const p = np.prayer;
+  const cp = currentPrayer(d0.list);
+  const p = cp ? cp.prayer : np.prayer;
   const fam = config.widgetFamily || "";
   if (fam === "accessoryCircular") {
     const n = styled(w.addText(p.name), Font.semiboldSystemFont(10)); n.centerAlignText();
     const t = styled(w.addText(fmtShort(p.azan, p.period)), Font.boldSystemFont(15)); t.centerAlignText();
   } else if (fam === "accessoryInline") {
-    styled(w.addText(`Next: ${p.name} ${prayerTimeLine(p)}`), Font.systemFont(13));
+    styled(w.addText(`${cp ? "Now" : "Next"}: ${p.name} ${prayerTimeLine(p)}`), Font.systemFont(13));
   } else {
     // rectangular: big upcoming prayer + time
     w.addSpacer();
     const v = w.addStack(); v.layoutVertically();
-    const lab = styled(v.addText("NEXT PRAYER"), Font.systemFont(9), DIM); lab.centerAlignText();
+    const lab = styled(v.addText(cp ? "NOW" : "NEXT PRAYER"), Font.systemFont(9), DIM); lab.centerAlignText();
     v.addSpacer(3);
     const nm = styled(v.addText(p.name.toUpperCase()), Font.semiboldSystemFont(20)); nm.centerAlignText();
     v.addSpacer(2);
     const tm = styled(v.addText(prayerTimeLine(p)), Font.boldSystemFont(17)); tm.centerAlignText();
     w.addSpacer();
   }
-  // refresh shortly after this prayer so "upcoming" flips at the right time
-  w.refreshAfterDate = new Date(np.date.getTime() + 2 * 60000);
+  // refresh shortly after the featured prayer flips — the next azan, or
+  // the end of the current prayer's iqamah + 10 window, whichever is first
+  let refresh = new Date(np.date.getTime() + 2 * 60000);
+  if (cp) {
+    const r = new Date(cp.end.getTime() + 60000);
+    if (r < refresh) refresh = r;
+  }
+  w.refreshAfterDate = refresh;
 } else {
   // ----- home screen: prayer rows, shared azan, iqamah per masjid -----
   const stale = data.some(d => d.stale);
